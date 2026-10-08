@@ -20,6 +20,9 @@ test('user: create project (python/use-cases group, both nodes + aggregator)', a
   await hubLogin(page);
   await page.goto(join(HUB.url, hub.projectsPath));
   await hub.addButton(page).click();
+  // Let the create form finish loading first: it re-renders once its data
+  // arrives, which wipes anything typed before that and closes the Group list.
+  await page.waitForLoadState('networkidle').catch(() => {});
   // Name the project after the current E2E run (unique per run). "Name" is a
   // slug pre-filled with a random value; overwrite it too so the project is
   // findable by PROJECT (it is already slug-safe: lowercase, digits, hyphens).
@@ -35,6 +38,7 @@ test('user: create project (python/use-cases group, both nodes + aggregator)', a
     await selectHubNode(page, name);
   }
 
+  await expect(hub.nameInput(page), 'project form was reset after filling').toHaveValue(PROJECT);
   await hub.submit(page).click();
   await expect(page.getByText(PROJECT).first()).toBeVisible();
 

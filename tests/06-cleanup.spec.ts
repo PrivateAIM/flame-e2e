@@ -12,7 +12,7 @@
 import { test, Page } from '@playwright/test';
 import {
   hub, nodeUi, s3, expect, join,
-  NODES, PROJECT, ANALYSIS,
+  HUB, NODES, PROJECT, ANALYSIS,
   hubLogin, nodeUiLogin, s3Login, s3Base, loadS3Creds,
 } from './shared';
 
@@ -45,20 +45,47 @@ async function tryStep(page: Page, title: string, fn: () => Promise<void>) {
 test('cleanup: delete analysis and project on the Hub', async ({ page }) => {
   await hubLogin(page);
 
+  // A delete is only done once its DELETE request has answered. Removing a built
+  // analysis takes a few seconds, and the project's delete button stays disabled
+  // for as long as the Hub still counts that analysis — so wait for the response
+  // instead of moving on (navigating away early would even abort the request).
+  const deleted = (resource: 'analyses' | 'projects') =>
+    page.waitForResponse(
+      (r) => r.request().method() === 'DELETE' && new RegExp(`/${resource}/[^/?]+$`).test(r.url()),
+      { timeout: 90_000 },
+    );
+
   await tryStep(page, `delete analysis "${ANALYSIS}"`, async () => {
     await hub.sidebarAnalyses(page).click();
     await page.waitForLoadState('networkidle').catch(() => {});
     await hub.analysisLink(page, ANALYSIS).click();
+    const response = deleted('analyses');
+    response.catch(() => {}); // surfaced below; avoid an unhandled rejection if the click fails
     await hub.deleteTopRight(page).click({ timeout: 10_000 });
     await hub.confirm(page).click({ timeout: 5_000 }).catch(() => {});
+    expect((await response).ok(), 'Hub rejected the analysis delete').toBeTruthy();
   });
 
   await tryStep(page, `delete project "${PROJECT}"`, async () => {
-    await hub.sidebarProjects(page).click();
-    await page.waitForLoadState('networkidle').catch(() => {});
-    await hub.projectLink(page, PROJECT).click();
-    await hub.deleteTopRight(page).click({ timeout: 10_000 });
-    await hub.confirm(page).click({ timeout: 5_000 }).catch(() => {});
+    // Load the list fresh (not via the sidebar) so the analysis count is current,
+    // and retry until the project is really gone.
+    let deleteClicked = false;
+    await expect(async () => {
+      await page.goto(join(HUB.url, hub.projectsPath));
+      await page.waitForLoadState('networkidle').catch(() => {});
+      if ((await page.getByText(PROJECT).count()) === 0) return;
+      await hub.projectLink(page, PROJECT).click({ timeout: 10_000 });
+      const response = deleted('projects');
+      response.catch(() => {});
+      await hub.deleteTopRight(page).click({ timeout: 10_000 });
+      deleteClicked = true;
+      await hub.confirm(page).click({ timeout: 5_000 }).catch(() => {});
+      expect((await response).ok(), 'Hub rejected the project delete').toBeTruthy();
+      await page.goto(join(HUB.url, hub.projectsPath));
+      await page.waitForLoadState('networkidle').catch(() => {});
+      await expect(page.getByText(PROJECT)).toHaveCount(0, { timeout: 5_000 });
+    }).toPass({ timeout: 120_000, intervals: [5_000] });
+    if (!deleteClicked) throw new Error('project not found (already deleted?)');
   });
 });
 

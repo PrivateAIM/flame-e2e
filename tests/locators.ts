@@ -110,17 +110,19 @@ export const hub = {
       .first()
       .locator('input[type="radio"], input[type="checkbox"], button')
       .first(),
+  // Image tab "Command" preview: "[Command]" until a base image is saved,
+  // "[File]" until an entrypoint is — e.g. "/usr/bin/python -u analysis-halta.py".
+  commandBox: (p: Page) => p.locator('.command-box'),
   uploadButton: (p: Page) => p.getByRole('button', { name: /upload/i }).first(),
   lockButton: (p: Page) => p.getByRole('button', { name: /lock|finish/i }).first(),
-  // After approval: "start" in the Build area, then "start" in the Distribution area.
-  buildStart: (p: Page) =>
-    p.locator('section, div, fieldset').filter({ hasText: /build/i }).getByRole('button', { name: /start|build/i }).first(),
-  buildStatus: (p: Page) =>
-    p.locator('section, div, fieldset').filter({ hasText: /build/i }).first(),
+  unlockButton: (p: Page) => p.getByRole('button', { name: /^unlock$/i }),
+  // Overview pipeline cards ("Build", "3. Distribution"), matched by their own
+  // header. Each gets a "start" button only once the previous step is done.
+  pipelineCard: (p: Page, title: RegExp) =>
+    p.locator('div.card').filter({ has: p.locator('.card-header', { hasText: title }) }),
+  buildStart: (p: Page) => hub.pipelineCard(p, /build/i).getByRole('button', { name: /^start$/i }),
   distributionStart: (p: Page) =>
-    p.locator('section, div, fieldset').filter({ hasText: /distribut/i }).getByRole('button', { name: /start|distribut/i }).first(),
-  distributionStatus: (p: Page) =>
-    p.locator('section, div, fieldset').filter({ hasText: /distribut/i }).first(),
+    hub.pipelineCard(p, /distribution/i).getByRole('button', { name: /^start$/i }),
   statusText: (p: Page) => p.locator('body'),
   resultsTab: (p: Page) => first(p.getByRole('link', { name: /result/i }), p.getByRole('tab', { name: /result/i })),
   downloadButton: (p: Page) =>

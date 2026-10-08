@@ -218,8 +218,14 @@ export async function selectMasterImage(page: Page) {
   await hub.option(page, HUB.masterImageGroup).click();
   await page.waitForTimeout(800); // the Image choices depend on the group
 
+  // Picking the image saves the analysis. Wait for that write to land before
+  // returning — a following entrypoint write otherwise races it and is lost.
   await comboAfter('Image').click();
-  await hub.option(page, HUB.masterImage).click();
+  await Promise.all([
+    page.waitForResponse((r) => r.request().method() === 'POST' && /\/analyses\/[^/]+$/.test(r.url()) && r.ok()),
+    hub.option(page, HUB.masterImage).click(),
+  ]);
+  await expect(hub.commandBox(page), 'master image was not saved').not.toContainText('[Command]');
 }
 
 // Filter the (long, paginated) node list to the target via the search box,

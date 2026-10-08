@@ -44,27 +44,38 @@ test('user: submit analysis and run it to completion', async ({ page }) => {
   await test.step('image: group + fedstats base + entrypoint', async () => {
     await hub.wizardTab(page, /image/i).click();
     await selectMasterImage(page);
-    await hub.entrypointToggle(page, ANALYSIS_FILE).click();
+    // The image and entrypoint saves are async; back to back they clobber each
+    // other, so give each a short break and check the Command preview after.
+    await page.waitForTimeout(2_000);
+    await Promise.all([
+      page.waitForResponse((r) => r.request().method() === 'POST' && /\/analysis-bucket-files\//.test(r.url()) && r.ok()),
+      hub.entrypointToggle(page, ANALYSIS_FILE).click(),
+    ]);
+    await expect(hub.commandBox(page), 'entrypoint was not selected').toContainText(ANALYSIS_FILE);
+    await expect(hub.commandBox(page), 'master image was lost').not.toContainText('[Command]');
+    await page.waitForTimeout(2_000);
   });
 
   // 8: Overview -> lock the configuration.
   await test.step('overview: lock the configuration', async () => {
     await hub.wizardTab(page, /overview/i).click();
     await hub.lockButton(page).click();
+    await expect(hub.unlockButton(page), 'configuration was not locked').toBeVisible();
   });
 
-  // 9: Build -> start, wait until the build completes.
+  // 9: Build -> start. The Distribution card only offers "start" once the build
+  // has finished, so that button appearing is the build-complete signal.
   await test.step('build: start and wait for completion', async () => {
     await hub.buildStart(page).click();
-    await expect(hub.buildStatus(page), 'build did not finish in time').toHaveText(
-      /finished|complete|done|built/i,
-      { timeout: RUN_TIMEOUT_MS },
-    );
+    await expect(hub.distributionStart(page), 'build did not finish in time').toBeVisible({
+      timeout: RUN_TIMEOUT_MS,
+    });
   });
 
   // 10: Distribute -> start, then open the Nodes tab.
   await test.step('distribute: start and open the Nodes tab', async () => {
     await hub.distributionStart(page).click();
+    await expect(hub.distributionStart(page), 'distribution did not start').toBeHidden({ timeout: 30_000 });
     await hub.wizardTab(page, /node/i).click();
   });
 
