@@ -1,0 +1,82 @@
+/**
+ * USER — Analysis submission + run.
+ *
+ * Within the project (shared RUN_ID): create the HALTA analysis from the
+ * project's Analyses tab, upload the code, pick the fedstats image + entrypoint,
+ * lock, then build and distribute it and wait for completion. Result retrieval
+ * is verified separately in 05. Requires the datastores (03) on both nodes.
+ */
+import { test } from '@playwright/test';
+import path from 'node:path';
+import {
+  hub, expect,
+  NODES, ANALYSIS, ANALYSIS_FILE, RUN_TIMEOUT_MS, FIXTURES,
+  openProject, selectMasterImage,
+} from './shared';
+
+test.describe.configure({ mode: 'serial' });
+
+const ANALYSIS_DESC = 'synthetic data, automated e2e test';
+
+test('user: submit analysis and run it to completion', async ({ page }) => {
+  // 1-5: open the project, Analyses tab, + Add, display name + description, create.
+  await test.step('create analysis (name + description) within the project', async () => {
+    await openProject(page);
+    await hub.analysesTab(page).click();
+    await hub.addButton(page).click();
+    await hub.nameInput(page).fill(ANALYSIS);
+    await hub.descriptionInput(page).fill(ANALYSIS_DESC);
+    await hub.submit(page).click();
+    await expect(page.getByText(ANALYSIS).first()).toBeVisible();
+  });
+
+  // 6: Code -> Add File -> select file -> upload the demo analysis file.
+  await test.step('code: upload the analysis file', async () => {
+    await hub.wizardTab(page, /code/i).click();
+    await hub.addFileButton(page).click();       // opens the Upload modal
+    await hub.uploadFilesMode(page).click();     // switch from Directories to Files
+    await hub.fileInput(page).setInputFiles(path.join(FIXTURES, ANALYSIS_FILE));
+    await hub.uploadButton(page).click();        // Upload
+    await expect(page.getByText(ANALYSIS_FILE).first()).toBeVisible();
+  });
+
+  // 7: Image -> select group + fedstats base image -> select entrypoint (green check).
+  await test.step('image: group + fedstats base + entrypoint', async () => {
+    await hub.wizardTab(page, /image/i).click();
+    await selectMasterImage(page);
+    await hub.entrypointToggle(page, ANALYSIS_FILE).click();
+  });
+
+  // 8: Overview -> lock the configuration.
+  await test.step('overview: lock the configuration', async () => {
+    await hub.wizardTab(page, /overview/i).click();
+    await hub.lockButton(page).click();
+  });
+
+  // 9: Build -> start, wait until the build completes.
+  await test.step('build: start and wait for completion', async () => {
+    await hub.buildStart(page).click();
+    await expect(hub.buildStatus(page), 'build did not finish in time').toHaveText(
+      /finished|complete|done|built/i,
+      { timeout: RUN_TIMEOUT_MS },
+    );
+  });
+
+  // 10: Distribute -> start, then open the Nodes tab.
+  await test.step('distribute: start and open the Nodes tab', async () => {
+    await hub.distributionStart(page).click();
+    await hub.wizardTab(page, /node/i).click();
+  });
+
+  // Completion: every node (2 nodes + aggregator) reaches execution. Node cards
+  // auto-refresh and show "execution: <status>"; accept running or executed.
+  await test.step('nodes: all nodes report execution status', async () => {
+    await expect(async () => {
+      const inExecution = await page.getByText(/execution:\s*(execution|executed)/i).count();
+      expect(inExecution, 'not all nodes in execution yet').toBeGreaterThanOrEqual(NODES.length + 1);
+    }, 'not all nodes reached execution in time').toPass({
+      timeout: RUN_TIMEOUT_MS,
+      intervals: [5_000, 10_000, 15_000],
+    });
+  });
+});
