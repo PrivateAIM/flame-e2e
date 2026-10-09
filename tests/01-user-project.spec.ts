@@ -39,8 +39,18 @@ test('user: create project (python/use-cases group, both nodes + aggregator)', a
   }
 
   await expect(hub.nameInput(page), 'project form was reset after filling').toHaveValue(PROJECT);
+  // The Hub creates the project first and then attaches the nodes one request at
+  // a time. Wait for every attachment before leaving the page — navigating away
+  // earlier aborts the remaining ones and leaves the project with fewer nodes.
+  let attached = 0;
+  page.on('response', (r) => {
+    if (r.request().method() === 'POST' && /\/project-nodes$/.test(r.url()) && r.ok()) attached += 1;
+  });
   await hub.submit(page).click();
   await expect(page.getByText(PROJECT).first()).toBeVisible();
+  await expect
+    .poll(() => attached, { message: 'not all nodes were attached to the project', timeout: 30_000 })
+    .toBe(targets.length);
 
   // Verify the project attached all targets — the aggregator in particular.
   await page.goto(join(HUB.url, hub.projectsPath));

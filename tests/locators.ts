@@ -101,6 +101,7 @@ export const hub = {
     first(p.getByRole('tab', { name: label }), p.getByRole('link', { name: label }), p.getByRole('button', { name: label })),
   addFileButton: (p: Page) => p.getByRole('button', { name: /add file/i }),
   // Upload modal defaults to "Directories"; switch to "Files" for a single file.
+  bucketRetry: (p: Page) => p.getByRole('button', { name: /^retry$/i }),
   uploadFilesMode: (p: Page) => p.getByRole('button', { name: /^files$/i }),
   fileInput: (p: Page) => p.locator('input[type="file"]:not([webkitdirectory])').first(),
   entrypointToggle: (p: Page, file: string) =>
